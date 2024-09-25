@@ -1,136 +1,55 @@
-name: Terraform and Deploy Medusa
+provider "aws" {
+  region = "ap-south-1"
+}
 
-on:
-  push:
-    branches:
-      - main  # Trigger on push to the main branch
-  workflow_dispatch:  # Allow manual trigger
-permissions:
-  contents: write
+resource "aws_instance" "medusa_instance" {
+  ami           = "ami-0522ab6e1ddcc7055"  # Choose an appropriate AMI ID based on your region
+  instance_type = "t2.medium"
+  key_name      = "sss"
 
-jobs:
-  terraform:
-    runs-on: ubuntu-latest
+  tags = {
+    Name = "Medusa-Headless"
+  }
+}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+resource "aws_security_group" "new_security_group" {
+  name        = "medusa_security_group"
+  description = "Allow HTTP, HTTPS, SSH, and Medusa traffic"
+  vpc_id      = "vpc-0cf25e1abb1c35925"  # Replace with your VPC ID
+}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0  # Use your Terraform version
+resource "aws_security_group_rule" "allow_http" {
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.new_security_group.id
+}
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1  # Your specified region
+resource "aws_security_group_rule" "allow_https" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.new_security_group.id
+}
 
-      - name: Terraform Init
-        run: |
-          cd Terraform
-          terraform init
+resource "aws_security_group_rule" "allow_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.new_security_group.id
+}
 
-      - name: Terraform Plan
-        run: |
-          cd Terraform
-          terraform plan
-
-      - name: Terraform Apply
-        run: |
-          cd Terraform
-          terraform apply -auto-approve
-
-      # Step 4: Capture Terraform Outputs
-      - name: Capture Terraform Outputs
-        id: tf_output
-        working-directory: Terraform
-        run: terraform output -raw ec2_instance_public_ip > output.txt
-
-      - name: Extract EC2 Public IP using grep
-        working-directory: Terraform
-        run: |
-          echo "Checking contents of output.txt:"
-          cat output.txt  # Debugging: Check the contents of output.txt
-          EC2_IP=$(grep -oP '^\d+\.\d+\.\d+\.\d+' output.txt | xargs)  # Use grep to find the IP address
-          echo "Extracted IP: $EC2_IP"
-          echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV  # Append to GitHub Actions environment
-
-      - name: Wait for EC2 to be ready
-        run: sleep 60  # Wait for the EC2 instance to boot up
-
-      - name: Install SSH Client
-        run: sudo apt-get install -y openssh-client
-
-      - name: SSH into EC2 and deploy Medusa
-        env:
-          EC2_IP: ${{ env.EC2_IP }}
-          PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}  # Use the secret for the private key
-          PUBLIC_KEY: ${{ secrets.EC2_PUBLIC_KEY }}    # Use the secret for the public key
-          
-        run: |
-          # Write private and public keys to files
-          echo "$PRIVATE_KEY" > private_key.pem
-          echo "$PUBLIC_KEY" > public_key.pub
-          
-          # Set correct permissions for SSH keys
-          chmod 600 private_key.pem
-          chmod 644 public_key.pub
-
-          # SSH into the EC2 instance
-          ssh -t -o "StrictHostKeyChecking=no" -i private_key.pem ubuntu@${EC2_IP} "bash -l"
-          
-          # Retry logic for apt commands
-          MAX_TRIES=5
-          for i in $(seq 1 $MAX_TRIES); do
-            if sudo apt-get update; then
-              break
-            else
-              echo "Waiting for apt to become available..."
-              sleep 10
-            fi
-          done
-          
-          # Update system and install necessary dependencies
-          sudo apt update && sudo apt upgrade -y
-          sudo apt install -y git nodejs npm postgresql redis-server
-          sudo systemctl enable postgresql
-          sudo systemctl start postgresql
-          sudo systemctl enable redis-server
-
-          # Set up PostgreSQL for Medusa-backend
-          sudo -u postgres psql -c "CREATE USER medusa WITH PASSWORD 'medusa';" || true
-          sudo -u postgres psql -c "CREATE DATABASE medusa;" || true
-          sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE medusa TO medusa;" || true
-
-          # Grant additional permissions to the user
-          sudo -u postgres psql -d medusa -c "GRANT ALL PRIVILEGES ON SCHEMA public TO medusa;"
-
-          # Configure PostgreSQL authentication method
-          sudo sh -c 'echo "host all all 0.0.0.0/0 md5" >> /etc/postgresql/16/main/pg_hba.conf'
-
-          # Reload PostgreSQL to apply configuration changes
-          sudo systemctl reload postgresql
-
-          # Install Medusa CLI
-          sudo npm install -g @medusajs/medusa-cli
-
-          # Create a new Medusa project
-          mkdir medusa-backend && cd medusa-backend
-          sudo medusa new . --skip-db
-
-          # Update the .env file to connect to the correct PostgreSQL database
-          echo "DATABASE_URL=postgres://medusa:medusa@localhost:5432/medusa" | sudo tee .env
-          echo "REDIS_URL=redis://localhost:6379" | sudo tee -a .env
-          sudo chown $USER:$USER .env && chmod 644 .env
-
-          # Run migrations
-          sudo medusa migrations run
-
-          # Set admin user-name and password
-          sudo medusa user --email medusa@gmail.com --password medusa
-
-          # Start Medusa backend
-          nohup sudo medusa start &> medusa.log &
+resource "aws_security_group_rule" "allow_medusa" {
+  type              = "ingress"
+  from_port         = 9000
+  to_port           = 9000
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.new_security_group.id
+}
