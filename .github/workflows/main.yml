@@ -3,10 +3,10 @@ name: Terraform and Deploy Medusa
 on:
   push:
     branches:
-      - main  # Trigger on push to the main branch 
+      - main  # Trigger on push to the main branch
   workflow_dispatch:  # Allow manual trigger
 permissions:
- contents: write
+  contents: write
 
 jobs:
   terraform:
@@ -39,11 +39,10 @@ jobs:
           terraform plan
 
       - name: Terraform Apply
-      
         run: |
-         cd Terraform
-         terraform apply -auto-approve
-        
+          cd Terraform
+          terraform apply -auto-approve
+
       # Step 4: Capture Terraform Outputs
       - name: Capture Terraform Outputs
         id: tf_output
@@ -53,12 +52,12 @@ jobs:
       - name: Extract EC2 Public IP using grep
         working-directory: Terraform
         run: |
-         echo "Checking contents of output.txt:"
-         cat output.txt  # Debugging: Check the contents of output.txt
-         EC2_IP=$(grep -oP '^\d+\.\d+\.\d+\.\d+' output.txt | xargs)  # Use grep to find the IP address
-         echo "Extracted IP: $EC2_IP"
-         echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV  # Append to GitHub Actions environment
-         
+          echo "Checking contents of output.txt:"
+          cat output.txt  # Debugging: Check the contents of output.txt
+          EC2_IP=$(grep -oP '^\d+\.\d+\.\d+\.\d+' output.txt | xargs)  # Use grep to find the IP address
+          echo "Extracted IP: $EC2_IP"
+          echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV  # Append to GitHub Actions environment
+
       - name: Wait for EC2 to be ready
         run: sleep 60  # Wait for the EC2 instance to boot up
 
@@ -68,26 +67,35 @@ jobs:
       - name: SSH into EC2 and deploy Medusa
         env:
           EC2_IP: ${{ env.EC2_IP }}
-          PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}  # Use the secret directly i
+          PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}  # Use the secret for the private key
+          PUBLIC_KEY: ${{ secrets.EC2_PUBLIC_KEY }}    # Use the secret for the public key
           
         run: |
+          # Write private and public keys to files
           echo "$PRIVATE_KEY" > private_key.pem
+          echo "$PUBLIC_KEY" > public_key.pub
+          
+          # Set correct permissions for SSH keys
           chmod 600 private_key.pem
+          chmod 644 public_key.pub
+
+          # SSH into the EC2 instance
           ssh -t -o "StrictHostKeyChecking=no" -i private_key.pem ubuntu@${EC2_IP} "bash -l"
-            # Retry logic for apt commands
+          
+          # Retry logic for apt commands
           MAX_TRIES=5
           for i in $(seq 1 $MAX_TRIES); do
-          if sudo apt-get update; then
-          break
-          else
-          echo "Waiting for apt to become available..."
-          sleep 10
-          fi
+            if sudo apt-get update; then
+              break
+            else
+              echo "Waiting for apt to become available..."
+              sleep 10
+            fi
           done
-             # Update system and install necessary dependencies
+          
+          # Update system and install necessary dependencies
           sudo apt update && sudo apt upgrade -y
-          sudo apt install -y git
-          sudo apt install -y nodejs npm git postgresql redis-server
+          sudo apt install -y git nodejs npm postgresql redis-server
           sudo systemctl enable postgresql
           sudo systemctl start postgresql
           sudo systemctl enable redis-server
@@ -97,15 +105,14 @@ jobs:
           sudo -u postgres psql -c "CREATE DATABASE medusa;" || true
           sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE medusa TO medusa;" || true
 
-           # Grant additional permissions to the user
+          # Grant additional permissions to the user
           sudo -u postgres psql -d medusa -c "GRANT ALL PRIVILEGES ON SCHEMA public TO medusa;"
 
           # Configure PostgreSQL authentication method
           sudo sh -c 'echo "host all all 0.0.0.0/0 md5" >> /etc/postgresql/16/main/pg_hba.conf'
 
-           # Reload PostgreSQL to apply configuration changes
+          # Reload PostgreSQL to apply configuration changes
           sudo systemctl reload postgresql
-
 
           # Install Medusa CLI
           sudo npm install -g @medusajs/medusa-cli
@@ -116,15 +123,14 @@ jobs:
 
           # Update the .env file to connect to the correct PostgreSQL database
           echo "DATABASE_URL=postgres://medusa:medusa@localhost:5432/medusa" | sudo tee .env
-          # Add Redis URL to the .env file
           echo "REDIS_URL=redis://localhost:6379" | sudo tee -a .env
           sudo chown $USER:$USER .env && chmod 644 .env
-          
-          # run migrations
+
+          # Run migrations
           sudo medusa migrations run
-          # set admin user-name and password 
+
+          # Set admin user-name and password
           sudo medusa user --email medusa@gmail.com --password medusa
 
           # Start Medusa backend
           nohup sudo medusa start &> medusa.log &
-          EOF
