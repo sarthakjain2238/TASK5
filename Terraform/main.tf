@@ -13,7 +13,7 @@ resource "aws_instance" "medusa_instance" {
 }
 
 resource "aws_security_group" "new_security_group" {
-  name        = "medusa_security_group_depkak"
+  name        = "medusa_security_group_soni"
   description = "Allow HTTP, HTTPS, SSH, and Medusa traffic"
   vpc_id      = "vpc-02aca3c29abc1cd43"  # Replace with your VPC ID
 }
