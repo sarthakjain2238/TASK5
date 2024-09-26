@@ -13,9 +13,9 @@ resource "aws_instance" "medusa_instance" {
 }
 
 resource "aws_security_group" "new_security_group" {
-  name        = "medusa_security_group_sarthak"
+  name        = "medusa_security_group_sarthak1"
   description = "Allow HTTP, HTTPS, SSH, and Medusa traffic"
-  vpc_id      = "vpc-0cf25e1abb1c35925"  # Replace with your VPC ID
+  vpc_id      = "vpc-02aca3c29abc1cd43"  # Replace with your VPC ID
 }
 
 resource "aws_security_group_rule" "allow_http" {
