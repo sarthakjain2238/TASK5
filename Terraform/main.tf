@@ -1,10 +1,10 @@
 provider "aws" {
-  region = "ap-south-1"
+  region = "us-east-1"
 }
 
 resource "aws_instance" "medusa_instance" {
-  ami           = "ami-0522ab6e1ddcc7055"  # Choose an appropriate AMI ID based on your region
-  instance_type = "t2.micro"
+  ami           = "ami-0e86e20dae9224db8"  # Choose an appropriate AMI ID based on your region
+  instance_type = "t2.large"
   key_name      = "new"
 
   tags = {
@@ -13,7 +13,7 @@ resource "aws_instance" "medusa_instance" {
 }
 
 resource "aws_security_group" "new_security_group" {
-  name        = "medusa_security_group"
+  name        = "medusa_security_group_sarthak"
   description = "Allow HTTP, HTTPS, SSH, and Medusa traffic"
   vpc_id      = "vpc-0cf25e1abb1c35925"  # Replace with your VPC ID
 }
