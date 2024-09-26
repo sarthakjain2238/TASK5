@@ -5,6 +5,7 @@ on:
     branches:
       - main  # Trigger on push to the main branch
   workflow_dispatch:  # Allow manual trigger
+
 permissions:
   contents: write
 
@@ -59,7 +60,7 @@ jobs:
           echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV  # Append to GitHub Actions environment
          
       - name: Wait for EC2 to be ready
-        run: sleep 30  # Wait for the EC2 instance to boot up
+        run: sleep 120  # Wait for the EC2 instance to boot up
 
       - name: Install SSH Client
         run: sudo apt-get install -y openssh-client
@@ -67,27 +68,27 @@ jobs:
       - name: SSH into EC2 and deploy Medusa
         env:
           EC2_IP: ${{ env.EC2_IP }}
-          PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}  # Use the secret directly
-        
+          PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
+          
         run: |
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
-          ssh -o "StrictHostKeyChecking=no" -o ServerAliveInterval=30 -o ServerAliveCountMax=4 -i private_key.pem ubuntu@${EC2_IP} << 'EOF'
+          ssh -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=4" -i private_key.pem ubuntu@${EC2_IP} << 'EOF'
             # Retry logic for apt commands
             MAX_TRIES=5
             for i in $(seq 1 $MAX_TRIES); do
-              if sudo apt-get update; then
+              if sudo apt-get update -q; then
                 break
               else
                 echo "Waiting for apt to become available..."
                 sleep 10
               fi
             done
-
+            
             # Update system and install necessary dependencies
-            sudo apt update && sudo apt upgrade -y
-            sudo apt install -y git
-            sudo apt install -y nodejs npm git postgresql redis-server
+            sudo apt update -q && sudo apt install -y git nodejs npm postgresql redis-server
+
+            # Start and enable PostgreSQL and Redis
             sudo systemctl enable postgresql
             sudo systemctl start postgresql
             sudo systemctl enable redis-server
@@ -96,13 +97,13 @@ jobs:
             sudo -u postgres psql -c "CREATE USER medusa WITH PASSWORD 'medusa';" || true
             sudo -u postgres psql -c "CREATE DATABASE medusa;" || true
             sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE medusa TO medusa;" || true
-
+            
             # Grant additional permissions to the user
             sudo -u postgres psql -d medusa -c "GRANT ALL PRIVILEGES ON SCHEMA public TO medusa;"
-
+            
             # Configure PostgreSQL authentication method
             sudo sh -c 'echo "host all all 0.0.0.0/0 md5" >> /etc/postgresql/16/main/pg_hba.conf'
-
+            
             # Reload PostgreSQL to apply configuration changes
             sudo systemctl reload postgresql
 
@@ -115,15 +116,15 @@ jobs:
 
             # Update the .env file to connect to the correct PostgreSQL database
             echo "DATABASE_URL=postgres://medusa:medusa@localhost:5432/medusa" | sudo tee .env
-            # Add Redis URL to the .env file
             echo "REDIS_URL=redis://localhost:6379" | sudo tee -a .env
             sudo chown $USER:$USER .env && chmod 644 .env
 
-            # run migrations
+            # Run migrations
             sudo medusa migrations run
-            # set admin user-name and password 
+            
+            # Set admin user-name and password 
             sudo medusa user --email medusa@gmail.com --password medusa
-
+            
             # Start Medusa backend
             nohup sudo medusa start &> medusa.log &
           EOF
