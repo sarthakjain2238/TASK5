@@ -61,7 +61,7 @@ jobs:
       - name: Wait for EC2 to be ready
         run: sleep 60  # Wait for the EC2 instance to boot up
 
-      - name: Install SSH Client
+      - name: Install SSH Client 
         run: sudo apt-get install -y openssh-client
 
       - name: SSH into EC2 and deploy Medusa
