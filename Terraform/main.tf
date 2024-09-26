@@ -4,7 +4,7 @@ provider "aws" {
 
 resource "aws_instance" "medusa_instance" {
   ami           = "ami-0e86e20dae9224db8"  # Choose an appropriate AMI ID based on your region
-  instance_type = "t2.large"
+  instance_type = "t2.medium"
   key_name      = "new"
 
   tags = {
@@ -13,7 +13,7 @@ resource "aws_instance" "medusa_instance" {
 }
 
 resource "aws_security_group" "new_security_group" {
-  name        = "medusa_security_group_sarthak1"
+  name        = "medusa_security_group_sarthak2"
   description = "Allow HTTP, HTTPS, SSH, and Medusa traffic"
   vpc_id      = "vpc-02aca3c29abc1cd43"  # Replace with your VPC ID
 }
