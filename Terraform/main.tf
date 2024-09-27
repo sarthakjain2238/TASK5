@@ -8,7 +8,7 @@ resource "aws_instance" "medusa_instance" {
   key_name      = "sarthak"
 
   tags = {
-    Name = "Medusa-Headless"
+    Name = "Headless"
   }
 }
 
